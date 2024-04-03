@@ -1,0 +1,165 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: jtJava <ilovefuud@gmail.com>
+Date: Wed, 3 Apr 2024 06:36:39 -0500
+Subject: [PATCH] Knockback Changes
+
+
+diff --git a/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java b/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java
+index dc7950f9a52a718317e5f41de9d396cd7b846bf3..2226350934f8e74ceb43a443719cec0160651bca 100644
+--- a/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java
++++ b/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java
+@@ -54,6 +54,7 @@ import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
+ import org.slf4j.Logger;
+ import org.spigotmc.SpigotWorldConfig;
+ import org.spongepowered.configurate.objectmapping.ConfigSerializable;
++import org.spongepowered.configurate.objectmapping.meta.Comment;
+ import org.spongepowered.configurate.objectmapping.meta.PostProcess;
+ import org.spongepowered.configurate.objectmapping.meta.Required;
+ import org.spongepowered.configurate.objectmapping.meta.Setting;
+@@ -545,6 +546,20 @@ public class WorldConfiguration extends ConfigurationPart {
+         public boolean disableSprintInterruptionOnAttack = false;
+         public int shieldBlockingDelay = 5;
+         public boolean disableRelativeProjectileVelocity = false;
++        public boolean legacyKnockback = false;
++        public double knockbackVerticalFriction = 2.0;
++        public double knockbackHorizontalFriction = 2.0;
++        public double knockbackHorizontal = 0.4;
++        public double knockbackVertical = 0.4;
++        public double knockbackVerticalLimit = 0.4000000059604645;
++        public double knockbackHorizontalExtra = 0.5;
++        public double knockbackVerticalExtra = 0.1;
++        public boolean sprintSlowdown = true;
++        public boolean useRangeFactor = true;
++        public double startRange = 2.5;
++        public double rangeFactor = 0.065;
++        public double maxRangeReduction = 0.4;
++        public boolean setSprintingStateOnAttack = true;
+ 
+         public enum RedstoneImplementation {
+             VANILLA, EIGENCRAFT, ALTERNATE_CURRENT
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..a9a80d5824bbb37378e362a57b36dbcfbec46b8b 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -1920,7 +1920,39 @@ public abstract class LivingEntity extends Entity implements Attackable {
+             Vec3 vec3d = this.getDeltaMovement();
+             Vec3 vec3d1 = (new Vec3(d1, 0.0D, d2)).normalize().scale(d0);
+ 
+-            EntityKnockbackEvent event = CraftEventFactory.callEntityKnockbackEvent((org.bukkit.craftbukkit.entity.CraftLivingEntity) this.getBukkitEntity(), attacker, cause, d0, vec3d1, vec3d.x / 2.0D - vec3d1.x, this.onGround() ? Math.min(0.4D, vec3d.y / 2.0D + d0) : vec3d.y, vec3d.z / 2.0D - vec3d1.z);
++            EntityKnockbackEvent event;
++            if (this.level().paperConfig().misc.legacyKnockback) {
++                double horizontal = this.level().paperConfig().misc.knockbackHorizontal;
++                double vertical = this.level().paperConfig().misc.knockbackVertical;
++                double horizontalFriction = this.level().paperConfig().misc.knockbackHorizontalFriction;
++                double verticalFriction = this.level().paperConfig().misc.knockbackVerticalFriction;
++
++                vec3d = vec3d1.multiply(
++                    1.0 / horizontalFriction,
++                    1.0 / verticalFriction,
++                    1.0 / horizontalFriction
++                );
++
++                double absoluteVerticalMotion = Math.abs(vec3d.y) / verticalFriction;
++                double magnitude = Math.sqrt(d0 * d0 + d1 * d1);
++
++                vec3d = vec3d.add(
++                    -(d0 / magnitude * horizontal),
++                    vertical - absoluteVerticalMotion,
++                    -(d1 / magnitude * horizontal)
++                );
++
++                event = CraftEventFactory.callEntityKnockbackEvent(
++                    (org.bukkit.craftbukkit.entity.CraftLivingEntity) this.getBukkitEntity(),
++                    attacker,
++                    cause,
++                    d0,
++                    vec3d1,
++                    vec3d.x, vec3d.y, vec3d.z);
++            } else {
++                event = CraftEventFactory.callEntityKnockbackEvent((org.bukkit.craftbukkit.entity.CraftLivingEntity) this.getBukkitEntity(), attacker, cause, d0, vec3d1, vec3d.x / 2.0D - vec3d1.x, this.onGround() ? Math.min(0.4D, vec3d.y / 2.0D + d0) : vec3d.y, vec3d.z / 2.0D - vec3d1.z);
++            }
++
+             if (event.isCancelled()) {
+                 return;
+             }
+@@ -2665,6 +2697,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+     @Override
+     public void setSprinting(boolean sprinting) {
+         super.setSprinting(sprinting);
++        this.setAttackKnockbackIncreased(sprinting);
+         AttributeInstance attributemodifiable = this.getAttribute(Attributes.MOVEMENT_SPEED);
+ 
+         attributemodifiable.removeModifier(LivingEntity.SPEED_MODIFIER_SPRINTING.getId());
+@@ -2674,6 +2707,16 @@ public abstract class LivingEntity extends Entity implements Attackable {
+ 
+     }
+ 
++    private boolean attackKnockbackIncreased;
++
++    public boolean isAttackKnockbackIncreased() {
++        return this.attackKnockbackIncreased;
++    }
++
++    public void setAttackKnockbackIncreased(boolean flag) {
++        this.attackKnockbackIncreased = flag;
++    }
++
+     public float getSoundVolume() {
+         return 1.0F;
+     }
+diff --git a/src/main/java/net/minecraft/world/entity/player/Player.java b/src/main/java/net/minecraft/world/entity/player/Player.java
+index 567704f61034363e48ef2a5b5566ebdc91682297..d4e2364c2f46a0d378f101c7bffb9c412340a327 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Player.java
++++ b/src/main/java/net/minecraft/world/entity/player/Player.java
+@@ -1274,7 +1274,11 @@ public abstract class Player extends LivingEntity {
+                     byte b0 = 0;
+                     int i = b0 + EnchantmentHelper.getKnockbackBonus(this);
+ 
+-                    if (this.isSprinting() && flag) {
++                    boolean extraKnockback = this.level().paperConfig().misc.setSprintingStateOnAttack ?
++                        this.isSprinting() :
++                        this.isAttackKnockbackIncreased();
++
++                    if (extraKnockback && flag) {
+                         sendSoundEffect(this, this.getX(), this.getY(), this.getZ(), SoundEvents.PLAYER_ATTACK_KNOCKBACK, this.getSoundSource(), 1.0F, 1.0F); // Paper - send while respecting visibility
+                         ++i;
+                         flag1 = true;
+@@ -1324,16 +1328,35 @@ public abstract class Player extends LivingEntity {
+ 
+                     if (flag5) {
+                         if (i > 0) {
++                            double extraHorizontal = this.level().paperConfig().misc.knockbackHorizontalExtra;
++
++                            double distanceX = this.getX() - target.getX();
++                            double distanceZ = this.getZ() - target.getZ();
++
++                            double range = Math.hypot(distanceX, distanceZ);
++                            double rangeReduction = Math.max((range - this.level().paperConfig().misc.startRange) * this.level().paperConfig().misc.rangeFactor, 0);
++
++                            double maximumRangeReduction = this.level().paperConfig().misc.maxRangeReduction;
++                            if (rangeReduction > maximumRangeReduction) {
++                                rangeReduction = maximumRangeReduction;
++                            }
++
++                            extraHorizontal -= rangeReduction;
++
+                             if (target instanceof LivingEntity) {
+-                                ((LivingEntity) target).knockback((double) ((float) i * 0.5F), (double) Mth.sin(this.getYRot() * 0.017453292F), (double) (-Mth.cos(this.getYRot() * 0.017453292F)), this, EntityKnockbackEvent.KnockbackCause.ENTITY_ATTACK); // CraftBukkit
++                                ((LivingEntity) target).knockback((double) ((float) i * extraHorizontal), (double) Mth.sin(this.getYRot() * 0.017453292F), (double) (-Mth.cos(this.getYRot() * 0.017453292F)), this, EntityKnockbackEvent.KnockbackCause.ENTITY_ATTACK); // CraftBukkit
+                             } else {
+                                 target.push((double) (-Mth.sin(this.getYRot() * 0.017453292F) * (float) i * 0.5F), 0.1D, (double) (Mth.cos(this.getYRot() * 0.017453292F) * (float) i * 0.5F), this); // Paper - Add EntityKnockbackByEntityEvent and EntityPushedByEntityAttackEvent
+                             }
+ 
+-                            this.setDeltaMovement(this.getDeltaMovement().multiply(0.6D, 1.0D, 0.6D));
++                            if (this.level().paperConfig().misc.sprintSlowdown) {
++                                this.setDeltaMovement(this.getDeltaMovement().multiply(0.6D, 1.0D, 0.6D));
++                            }
+                             // Paper start - Configurable sprint interruption on attack
+-                            if (!this.level().paperConfig().misc.disableSprintInterruptionOnAttack) {
++                            if (!this.level().paperConfig().misc.disableSprintInterruptionOnAttack || this.level().paperConfig().misc.setSprintingStateOnAttack) {
+                                 this.setSprinting(false);
++                            } else if (!this.level().paperConfig().misc.setSprintingStateOnAttack) {
++                                this.setAttackKnockbackIncreased(false);
+                             }
+                             // Paper end - Configurable sprint interruption on attack
+                         }
