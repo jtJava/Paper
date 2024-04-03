@@ -1,11 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: jtJava <ilovefuud@gmail.com>
 Date: Wed, 3 Apr 2024 06:36:39 -0500
-Subject: [PATCH] Knockback Changes
+Subject: [PATCH] Combat Changes
 
 
 diff --git a/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java b/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java
-index dc7950f9a52a718317e5f41de9d396cd7b846bf3..2226350934f8e74ceb43a443719cec0160651bca 100644
+index dc7950f9a52a718317e5f41de9d396cd7b846bf3..96c4f796cd1ca981c151b5b85ae90ec5afc804b2 100644
 --- a/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java
 +++ b/src/main/java/io/papermc/paper/configuration/WorldConfiguration.java
 @@ -54,6 +54,7 @@ import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
@@ -16,7 +16,7 @@ index dc7950f9a52a718317e5f41de9d396cd7b846bf3..2226350934f8e74ceb43a443719cec01
  import org.spongepowered.configurate.objectmapping.meta.PostProcess;
  import org.spongepowered.configurate.objectmapping.meta.Required;
  import org.spongepowered.configurate.objectmapping.meta.Setting;
-@@ -545,6 +546,20 @@ public class WorldConfiguration extends ConfigurationPart {
+@@ -545,6 +546,21 @@ public class WorldConfiguration extends ConfigurationPart {
          public boolean disableSprintInterruptionOnAttack = false;
          public int shieldBlockingDelay = 5;
          public boolean disableRelativeProjectileVelocity = false;
@@ -34,14 +34,15 @@ index dc7950f9a52a718317e5f41de9d396cd7b846bf3..2226350934f8e74ceb43a443719cec01
 +        public double rangeFactor = 0.065;
 +        public double maxRangeReduction = 0.4;
 +        public boolean setSprintingStateOnAttack = true;
++        public boolean splashPotionExpansion = true;
  
          public enum RedstoneImplementation {
              VANILLA, EIGENCRAFT, ALTERNATE_CURRENT
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..a9a80d5824bbb37378e362a57b36dbcfbec46b8b 100644
+index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..25311a42d8e60c29e74e90d9a7f87b47f64acddd 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-@@ -1920,7 +1920,39 @@ public abstract class LivingEntity extends Entity implements Attackable {
+@@ -1920,7 +1920,43 @@ public abstract class LivingEntity extends Entity implements Attackable {
              Vec3 vec3d = this.getDeltaMovement();
              Vec3 vec3d1 = (new Vec3(d1, 0.0D, d2)).normalize().scale(d0);
  
@@ -52,21 +53,25 @@ index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..a9a80d5824bbb37378e362a57b36dbcf
 +                double vertical = this.level().paperConfig().misc.knockbackVertical;
 +                double horizontalFriction = this.level().paperConfig().misc.knockbackHorizontalFriction;
 +                double verticalFriction = this.level().paperConfig().misc.knockbackVerticalFriction;
++                double verticalLimit = this.level().paperConfig().misc.knockbackVerticalLimit;
 +
-+                vec3d = vec3d1.multiply(
-+                    1.0 / horizontalFriction,
-+                    1.0 / verticalFriction,
-+                    1.0 / horizontalFriction
-+                );
++                double motX = vec3d.x;
++                double motY = vec3d.y;
++                double motZ = vec3d.z;
 +
-+                double absoluteVerticalMotion = Math.abs(vec3d.y) / verticalFriction;
++                motX /= horizontalFriction;
++                motY /= verticalFriction;
++                motZ /= horizontalFriction;
++
 +                double magnitude = Math.sqrt(d0 * d0 + d1 * d1);
 +
-+                vec3d = vec3d.add(
-+                    -(d0 / magnitude * horizontal),
-+                    vertical - absoluteVerticalMotion,
-+                    -(d1 / magnitude * horizontal)
-+                );
++                motX -= d0 / magnitude * horizontal;
++                motY += vertical;
++                motZ -= d1 / magnitude * horizontal;
++
++                if (motY > verticalLimit) {
++                    motY = verticalLimit;
++                }
 +
 +                event = CraftEventFactory.callEntityKnockbackEvent(
 +                    (org.bukkit.craftbukkit.entity.CraftLivingEntity) this.getBukkitEntity(),
@@ -74,7 +79,7 @@ index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..a9a80d5824bbb37378e362a57b36dbcf
 +                    cause,
 +                    d0,
 +                    vec3d1,
-+                    vec3d.x, vec3d.y, vec3d.z);
++                    motX, motY, motZ);
 +            } else {
 +                event = CraftEventFactory.callEntityKnockbackEvent((org.bukkit.craftbukkit.entity.CraftLivingEntity) this.getBukkitEntity(), attacker, cause, d0, vec3d1, vec3d.x / 2.0D - vec3d1.x, this.onGround() ? Math.min(0.4D, vec3d.y / 2.0D + d0) : vec3d.y, vec3d.z / 2.0D - vec3d1.z);
 +            }
@@ -82,7 +87,7 @@ index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..a9a80d5824bbb37378e362a57b36dbcf
              if (event.isCancelled()) {
                  return;
              }
-@@ -2665,6 +2697,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+@@ -2665,6 +2701,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
      @Override
      public void setSprinting(boolean sprinting) {
          super.setSprinting(sprinting);
@@ -90,7 +95,7 @@ index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..a9a80d5824bbb37378e362a57b36dbcf
          AttributeInstance attributemodifiable = this.getAttribute(Attributes.MOVEMENT_SPEED);
  
          attributemodifiable.removeModifier(LivingEntity.SPEED_MODIFIER_SPRINTING.getId());
-@@ -2674,6 +2707,16 @@ public abstract class LivingEntity extends Entity implements Attackable {
+@@ -2674,6 +2711,16 @@ public abstract class LivingEntity extends Entity implements Attackable {
  
      }
  
@@ -163,3 +168,30 @@ index 567704f61034363e48ef2a5b5566ebdc91682297..d4e2364c2f46a0d378f101c7bffb9c41
                              }
                              // Paper end - Configurable sprint interruption on attack
                          }
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java b/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+index ab777952bda1651796ed41e8a7fc6621f27db9aa..ebec945981f1423c173ddddaa193cc18868a62a3 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+@@ -10,6 +10,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
+ import net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.phys.BlockHitResult;
++import net.minecraft.world.phys.EntityHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
+ 
+@@ -47,6 +48,14 @@ public abstract class ThrowableProjectile extends Projectile {
+         HitResult movingobjectposition = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
+         boolean flag = false;
+ 
++        if (this.level().paperConfig().misc.splashPotionExpansion) {
++            int ticksLived = this.tickCount;
++            if (movingobjectposition.getType() == HitResult.Type.MISS && ticksLived > 4 && this instanceof ThrownPotion &&
++                this.cachedOwner != null && this.cachedOwner.getBoundingBox().intersects(this.getBoundingBox().inflate(0.5, 1.0, 0.5))) {
++                movingobjectposition = new EntityHitResult(this.cachedOwner);
++            }
++        }
++
+         if (movingobjectposition.getType() == HitResult.Type.BLOCK) {
+             BlockPos blockposition = ((BlockHitResult) movingobjectposition).getBlockPos();
+             BlockState iblockdata = this.level().getBlockState(blockposition);
