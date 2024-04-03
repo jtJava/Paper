@@ -39,7 +39,7 @@ index dc7950f9a52a718317e5f41de9d396cd7b846bf3..96c4f796cd1ca981c151b5b85ae90ec5
          public enum RedstoneImplementation {
              VANILLA, EIGENCRAFT, ALTERNATE_CURRENT
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..25311a42d8e60c29e74e90d9a7f87b47f64acddd 100644
+index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..5429e98dfdb319dbfc6c79fd64a8b3fd916d05e9 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -1920,7 +1920,43 @@ public abstract class LivingEntity extends Entity implements Attackable {
@@ -63,7 +63,7 @@ index 23570a0b1227a840b9c1e6ae326827ea655bb5f7..25311a42d8e60c29e74e90d9a7f87b47
 +                motY /= verticalFriction;
 +                motZ /= horizontalFriction;
 +
-+                double magnitude = Math.sqrt(d0 * d0 + d1 * d1);
++                double magnitude = Math.sqrt(d1 * d1 + d2 * d2);
 +
 +                motX -= d0 / magnitude * horizontal;
 +                motY += vertical;
